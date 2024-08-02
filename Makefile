@@ -5,7 +5,7 @@ LD = $(CC)
 OUT=undmg
 SRC=$(wildcard *.c)
 OBJ=$(SRC:.c=.o)
-LIB=$(shell $(PKG_CONFIG) --libs zlib) $(shell $(PKG_CONFIG) --libs bzip2) -llzfse -lc
+LIB=$(shell $(PKG_CONFIG) --libs zlib) $(shell $(PKG_CONFIG) --libs bzip2) -llzfse -llzma -lc
 PREFIX=/usr/local
 TARGET=$(PREFIX)/bin/$(OUT)
 LDFLAGS=

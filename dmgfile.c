@@ -4,10 +4,12 @@
  */
 
 #include <bzlib.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <zlib.h>
 #include <lzfse.h>
+#include <lzma.h>
 
 #include "dmg.h"
 #include "dmgfile.h"
@@ -16,6 +18,7 @@ static void cacheRun(DMG *dmg, BLKXTable *blkx, int run) {
   size_t bufferSize;
   z_stream zstrm;
   bz_stream bzstrm;
+  lzma_stream lzmastrm = LZMA_STREAM_INIT;
   void *inBuffer;
   int ret;
   size_t have;
@@ -94,6 +97,28 @@ static void cacheRun(DMG *dmg, BLKXTable *blkx, int run) {
   case BLOCK_LZFSE:
     have = lzfse_decode_buffer(dmg->runData, bufferSize, inBuffer, bufferSize, NULL);
 
+    break;
+  case BLOCK_LZMA:
+    ASSERT(lzma_stream_decoder(&lzmastrm, UINT64_MAX, 0) == LZMA_OK, "lzma_stream_decoder");
+
+    ASSERT(
+        (lzmastrm.avail_in = dmg->dmg->read(dmg->dmg, inBuffer,
+                                            blkx->runs[run].compLength)) ==
+            blkx->runs[run].compLength,
+        "fread");
+    lzmastrm.next_in = inBuffer;
+
+    do {
+      lzmastrm.avail_out = bufferSize;
+      lzmastrm.next_out = dmg->runData;
+      ret = lzma_code(&lzmastrm, LZMA_RUN);
+      if (ret != LZMA_OK && ret != LZMA_STREAM_END) {
+        ASSERT(FALSE, "lzma_code");
+      }
+      have = bufferSize - lzmastrm.avail_out;
+    } while (lzmastrm.avail_out == 0);
+
+    lzma_end(&lzmastrm);
     break;
   case BLOCK_RAW:
     ASSERT((have = dmg->dmg->read(dmg->dmg, dmg->runData,

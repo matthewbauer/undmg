@@ -1,10 +1,12 @@
 #include <bzlib.h>
 #include <inttypes.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <zlib.h>
 #include <lzfse.h>
+#include <lzma.h>
 
 #include "dmg.h"
 
@@ -312,6 +314,7 @@ void extractBLKX(AbstractFile *in, AbstractFile *out, BLKXTable *blkx) {
 
   z_stream zstrm;
   bz_stream bzstrm;
+  lzma_stream lzmastrm = LZMA_STREAM_INIT;
 
   bufferSize = SECTOR_SIZE * blkx->decompressBufferRequested;
 
@@ -417,6 +420,28 @@ void extractBLKX(AbstractFile *in, AbstractFile *out, BLKXTable *blkx) {
       ASSERT(have > 0, "lzfse_decode_buffer");
       ASSERT(out->write(out, outBuffer, have) == have, "mWrite");
 
+      break;
+    case BLOCK_LZMA:
+      ASSERT(lzma_stream_decoder(&lzmastrm, UINT64_MAX, 0) == LZMA_OK, "lzma_stream_decoder");
+
+      ASSERT(
+          (lzmastrm.avail_in = in->read(in, inBuffer, blkx->runs[i].compLength)) ==
+              blkx->runs[i].compLength,
+          "fread");
+      lzmastrm.next_in = inBuffer;
+
+      do {
+        lzmastrm.avail_out = bufferSize;
+        lzmastrm.next_out = outBuffer;
+        ret = lzma_code(&lzmastrm, LZMA_RUN);
+        if (ret != LZMA_OK && ret != LZMA_STREAM_END) {
+          ASSERT(FALSE, "lzma_code");
+        }
+        have = bufferSize - lzmastrm.avail_out;
+        ASSERT(out->write(out, outBuffer, have) == have, "mWrite");
+      } while (lzmastrm.avail_out == 0);
+
+      lzma_end(&lzmastrm);
       break;
     case BLOCK_RAW:
       if (blkx->runs[i].compLength > bufferSize) {
